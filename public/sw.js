@@ -6,7 +6,7 @@
  * encrypted and flow exclusively over the WebSocket, which bypasses the SW.
  */
 
-const CACHE = 'zangi-x-shell-v3';
+const CACHE = 'zangi-x-shell-v4';
 const ASSETS = ['./', 'index.html', 'boot.js', 'app.js', 'libs/sodium.js', 'styles.css', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (event) => {

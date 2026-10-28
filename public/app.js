@@ -49,6 +49,10 @@
   const blobUrls = new Set();
   const knownMedia = new Set();
 
+  // Contacts: a long-term identity keypair + address book (localStorage).
+  let myIdentity = null; // { sk, pk, pkB64 } — X25519 keypair
+  let contacts = [];     // [{ pub, name }]
+
   const $ = (id) => document.getElementById(id);
   const els = {};
 
@@ -109,6 +113,7 @@
     }
 
     setupIdentity();
+    setupContacts();
     initTheme();
     wireUI();
     registerServiceWorker();
@@ -168,6 +173,202 @@
         toast('Apelido alterado para: ' + NICK);
       }
     });
+  }
+
+  // ===== Contacts (persistent identity + address book) =====================
+  // Each person has a long-term X25519 identity keypair (localStorage) → a
+  // stable, anonymous "address" (public key) they can share. Adding a contact
+  // just saves their address on YOUR device. A 1-on-1 room with a contact is
+  // derived deterministically from both identities via ECDH (crypto_box_beforenm),
+  // so BOTH sides compute the same private room without ever exchanging a link.
+  // The server still sees only an opaque room handle + ciphertext.
+  const PKBYTES = () => sodium.crypto_box_PUBLICKEYBYTES || 32;
+  const SKBYTES = () => sodium.crypto_box_SECRETKEYBYTES || 32;
+
+  function setupContacts() {
+    loadIdentity();
+    loadContacts();
+    injectContactsButton();
+    maybeImportContactFromHash();
+  }
+
+  function loadIdentity() {
+    try {
+      const s = JSON.parse(localStorage.getItem('zx_identity') || 'null');
+      if (s && s.sk && s.pk) {
+        const sk = fromUrlB64(s.sk), pk = fromUrlB64(s.pk);
+        if (sk && pk && sk.length === SKBYTES() && pk.length === PKBYTES()) { myIdentity = { sk, pk, pkB64: s.pk }; return; }
+      }
+    } catch {}
+    const kp = sodium.crypto_box_keypair();
+    myIdentity = { sk: kp.privateKey, pk: kp.publicKey, pkB64: toUrlB64(kp.publicKey) };
+    try { localStorage.setItem('zx_identity', JSON.stringify({ sk: toUrlB64(myIdentity.sk), pk: myIdentity.pkB64 })); } catch {}
+  }
+
+  function myAddressLink() { return location.origin + location.pathname + '#add=' + myIdentity.pkB64; }
+
+  function loadContacts() { try { const c = JSON.parse(localStorage.getItem('zx_contacts') || '[]'); contacts = Array.isArray(c) ? c : []; } catch { contacts = []; } }
+  function saveContacts() { try { localStorage.setItem('zx_contacts', JSON.stringify(contacts)); } catch {} }
+
+  function parseAddress(input) {
+    let s = (input || '').trim();
+    const h = s.indexOf('#');
+    if (h >= 0) { const p = new URLSearchParams(s.slice(h + 1)); s = p.get('add') || p.get('k') || s.slice(h + 1); }
+    const pk = fromUrlB64(s);
+    return pk && pk.length === PKBYTES() ? toUrlB64(pk) : null;
+  }
+
+  function addContact(pubB64, name) {
+    if (pubB64 === myIdentity.pkB64) { toast('Esse é o seu próprio endereço'); return null; }
+    const existing = contacts.find((c) => c.pub === pubB64);
+    if (existing) { if (name) { existing.name = name; saveContacts(); } return existing; }
+    const c = { pub: pubB64, name: (name || '').trim() || 'Contato ' + (contacts.length + 1) };
+    contacts.push(c);
+    saveContacts();
+    return c;
+  }
+  function removeContact(pubB64) { contacts = contacts.filter((c) => c.pub !== pubB64); saveContacts(); }
+
+  // Shared room key both sides compute identically (ECDH + domain separation).
+  function deriveContactRoomKey(theirPubB64) {
+    const theirPub = fromUrlB64(theirPubB64);
+    const shared = sodium.crypto_box_beforenm(theirPub, myIdentity.sk); // symmetric for both parties
+    const a = myIdentity.pkB64, b = theirPubB64;
+    const ctx = utf8('zangi-dm-v1:' + (a < b ? a + '|' + b : b + '|' + a));
+    return sodium.crypto_generichash(32, ctx, shared);
+  }
+
+  function startContactChat(contact) {
+    const key = deriveContactRoomKey(contact.pub);
+    const room = roomHandleFromKey(key);
+    const chat = addChat({ id: room, room, key, name: contact.name, type: 'private' });
+    hideOverlay();
+    setActiveChat(chat.id);
+    toast('Conversa privada com ' + contact.name);
+  }
+
+  function injectContactsButton() {
+    const tools = els.sidebar && els.sidebar.querySelector('.side-tools');
+    if (!tools || tools.querySelector('#btn-contacts')) return;
+    const b = document.createElement('button');
+    b.id = 'btn-contacts';
+    b.className = 'ghost-btn';
+    b.textContent = '👤 Contatos';
+    b.title = 'Seus contatos e seu endereço Zangi';
+    b.addEventListener('click', showContactsModal);
+    tools.appendChild(b);
+  }
+
+  function maybeImportContactFromHash() {
+    const p = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const add = p.get('add');
+    if (!add) return;
+    const pub = parseAddress(add);
+    history.replaceState(null, '', location.pathname); // strip from the address bar
+    if (!pub || pub === myIdentity.pkB64) return;
+    promptModal({
+      title: 'Adicionar contato',
+      note: 'Alguém compartilhou o endereço Zangi dele. Dê um nome (fica só no seu aparelho).',
+      current: '',
+      onSave: (name) => { if (addContact(pub, name)) toast('Contato adicionado'); },
+    });
+  }
+
+  function showContactsModal() {
+    const m = modalShell();
+    const title = document.createElement('h2');
+    title.textContent = '👤 Contatos';
+    m.appendChild(title);
+
+    // --- My address ---
+    const myNote = document.createElement('p');
+    myNote.style.cssText = 'margin:0 0 8px;color:var(--muted);font-size:13px';
+    myNote.textContent = 'Seu endereço Zangi — compartilhe para que te adicionem. É anônimo: apenas uma chave pública, sem nome nem telefone.';
+    m.appendChild(myNote);
+    const myRow = document.createElement('div');
+    myRow.className = 'row';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'primary-btn';
+    copyBtn.textContent = 'Copiar meu endereço';
+    copyBtn.addEventListener('click', async () => { try { await navigator.clipboard.writeText(myAddressLink()); toast('Endereço copiado'); } catch { toast('Falha ao copiar — selecione manualmente'); } });
+    const qrBtn = document.createElement('button');
+    qrBtn.className = 'ghost-btn';
+    qrBtn.textContent = 'QR Code';
+    const qrBox = document.createElement('div');
+    qrBox.style.cssText = 'display:flex;justify-content:center;margin-top:10px';
+    qrBtn.addEventListener('click', () => { if (qrBox.firstChild) qrBox.innerHTML = ''; else renderQrCode(qrBox, myAddressLink()); });
+    myRow.append(copyBtn, qrBtn);
+    m.append(myRow, qrBox);
+
+    const hr1 = document.createElement('div');
+    hr1.style.cssText = 'border-top:1px solid var(--line);margin:16px 0 12px';
+    m.appendChild(hr1);
+
+    // --- Add a contact ---
+    const addrIn = document.createElement('input');
+    addrIn.type = 'text';
+    addrIn.placeholder = 'Colar endereço do contato (…#add=…)';
+    const nameIn = document.createElement('input');
+    nameIn.type = 'text';
+    nameIn.placeholder = 'Nome do contato';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'primary-btn';
+    addBtn.style.width = '100%';
+    addBtn.textContent = 'Adicionar contato';
+    const listEl = document.createElement('div');
+    addBtn.addEventListener('click', () => {
+      const pub = parseAddress(addrIn.value);
+      if (!pub) return toast('Endereço inválido');
+      if (addContact(pub, nameIn.value)) { addrIn.value = ''; nameIn.value = ''; renderContactList(listEl); toast('Contato adicionado'); }
+    });
+    m.append(addrIn, nameIn, addBtn);
+
+    // --- List ---
+    const listTitle = document.createElement('div');
+    listTitle.style.cssText = 'margin:16px 0 6px;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.4px';
+    listTitle.textContent = 'SEUS CONTATOS';
+    listEl.className = 'contact-list';
+    m.append(listTitle, listEl);
+    renderContactList(listEl);
+
+    const close = document.createElement('button');
+    close.className = 'ghost-btn';
+    close.style.cssText = 'width:100%;margin-top:14px';
+    close.textContent = 'Fechar';
+    close.addEventListener('click', hideOverlay);
+    m.appendChild(close);
+
+    showOverlay();
+  }
+
+  function renderContactList(listEl) {
+    listEl.innerHTML = '';
+    if (contacts.length === 0) {
+      const p = document.createElement('p');
+      p.style.cssText = 'color:var(--muted);font-size:13px;text-align:center;padding:10px';
+      p.textContent = 'Nenhum contato ainda. Compartilhe seu endereço ou cole o de alguém acima.';
+      listEl.appendChild(p);
+      return;
+    }
+    for (const c of contacts) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line)';
+      row.appendChild(createAvatarEl(c.name, 38));
+      const nm = document.createElement('div');
+      nm.style.cssText = 'flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      nm.textContent = c.name;
+      const msg = document.createElement('button');
+      msg.className = 'primary-btn';
+      msg.textContent = 'Mensagem';
+      msg.addEventListener('click', () => startContactChat(c));
+      const del = document.createElement('button');
+      del.className = 'icon-btn danger';
+      del.textContent = '×';
+      del.title = 'Remover contato';
+      del.addEventListener('click', () => { removeContact(c.pub); renderContactList(listEl); });
+      row.append(nm, msg, del);
+      listEl.appendChild(row);
+    }
   }
 
   // ===== Theme ==============================================================
@@ -1750,6 +1951,9 @@
     manualClose = true;
     try { ws && ws.close(); } catch {}
     try { sessionStorage.clear(); } catch {}
+    try { localStorage.removeItem('zx_contacts'); localStorage.removeItem('zx_identity'); } catch {}
+    contacts = [];
+    loadIdentity(); // regenerate a fresh anonymous identity (new address)
     chats.clear();
     activeChatId = null;
     els.chatList.innerHTML = '';
