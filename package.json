@@ -1,0 +1,19 @@
+{
+  "name": "zangi-x",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Zangi X — ephemeral, end-to-end-encrypted, in-memory relay chat tuned for free-tier hosting. The server is a dumb relay that never sees plaintext and never writes to disk.",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --expose-gc server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "lru-cache": "10.4.3",
+    "ws": "8.18.0"
+  }
+}

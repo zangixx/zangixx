@@ -1,0 +1,47 @@
+# Fly.io config — one small Docker machine that scales to zero when idle.
+# Deploy:
+#   flyctl launch --no-deploy --copy-config --name zangi-x   # reuse this file
+#   flyctl secrets set STATS_SECRET=$(openssl rand -hex 24)  # not stored in this file
+#   flyctl deploy
+#
+# `min_machines_running = 0` lets the machine stop when no connections remain
+# (ephemeral by design — stopping wipes all rooms). It auto-starts on the next
+# request; expect a short cold start.
+
+app = "zangi-x"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  NODE_OPTIONS = "--max-old-space-size=400"
+  MEM_LIMIT_BYTES = "536870912"      # 512 MB budget for the MemoryManager
+  ROOM_TTL_MS = "300000"
+  MAX_ROOM_MEDIA_BYTES = "52428800"  # 50 MB per room
+  MAX_TOTAL_MEDIA_BYTES = "209715200"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 150
+
+  [[http_service.checks]]
+    method = "get"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpus = 1

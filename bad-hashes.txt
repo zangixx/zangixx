@@ -1,0 +1,16 @@
+# Zangi X — known-bad content hashes (abuse screening)
+#
+# One SHA-256 hex digest per line. These are hashes of ORIGINAL file bytes
+# (the bytes a user selects), NOT of the compressed/encrypted payload.
+# Lines that are blank or start with '#' are ignored.
+#
+# Build entries from a file:   sha256sum badfile.jpg   (Linux/macOS)
+#                              Get-FileHash -Algorithm SHA256 badfile.jpg   (PowerShell)
+#
+# Reload without downtime after editing:
+#   docker compose kill -s HUP zangi
+#
+# IMPORTANT: exact-hash matching is evadable (a single changed byte produces a
+# different hash) and only binds the official client. See README "Abuse
+# screening" for scope and limits. This is a first-line control, not a complete
+# solution.

@@ -1,0 +1,453 @@
+:root {
+  --bg: #0b0d10;
+  --panel: #14171c;
+  --panel-2: #1b1f26;
+  --line: #262b33;
+  --text: #e7eaf0;
+  --muted: #8b93a1;
+  --accent: #4f9cff;
+  --accent-2: #2a6fd6;
+  --danger: #ff5d5d;
+  --ok: #46d17f;
+  --me: #1f3b63;
+  --radius: 14px;
+  --maxw: 820px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #f3f5f8;
+    --panel: #ffffff;
+    --panel-2: #eef1f5;
+    --line: #dde2e9;
+    --text: #10131a;
+    --muted: #5c6472;
+    --me: #d6e6ff;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  padding-top: calc(10px + env(safe-area-inset-top));
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 0 transparent;
+  transition: background 0.2s;
+}
+.dot.online {
+  background: var(--ok);
+}
+.dot.offline {
+  background: var(--danger);
+}
+
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+  cursor: pointer;
+}
+
+.ghost-btn,
+.icon-btn,
+.send-btn {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.ghost-btn:hover {
+  border-color: var(--accent);
+}
+.ghost-btn.danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.banner {
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--muted);
+  word-break: break-all;
+}
+.banner strong {
+  color: var(--text);
+}
+.banner .link {
+  color: var(--accent);
+}
+.banner button {
+  margin-top: 8px;
+}
+.hidden {
+  display: none !important;
+}
+
+.messages {
+  list-style: none;
+  margin: 0;
+  padding: 14px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overscroll-behavior: contain;
+}
+
+.msg {
+  max-width: 78%;
+  padding: 8px 11px;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  align-self: flex-start;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.msg.me {
+  align-self: flex-end;
+  background: var(--me);
+}
+.msg .meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.msg .nick {
+  font-weight: 600;
+}
+.msg .body {
+  white-space: pre-wrap;
+}
+.msg img,
+.msg video {
+  max-width: 100%;
+  max-height: 60vh;
+  border-radius: 10px;
+  display: block;
+}
+.msg .loading {
+  color: var(--muted);
+  font-style: italic;
+}
+.msg .sys {
+  color: var(--muted);
+  font-size: 12px;
+}
+.msg.system {
+  align-self: center;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px;
+}
+
+.typing {
+  min-height: 16px;
+  padding: 0 16px 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+#input {
+  flex: 1;
+  resize: none;
+  max-height: 140px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+#input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.icon-btn {
+  font-size: 20px;
+  line-height: 1;
+  padding: 8px 12px;
+}
+
+.send-btn {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: #fff;
+  font-weight: 600;
+}
+.send-btn:hover {
+  background: var(--accent);
+}
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Honeypot fields — kept in the DOM, kept off every screen and reader. */
+.hp {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 86px;
+  transform: translateX(-50%);
+  background: #000;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0.95;
+  z-index: 10;
+}
+
+.lock-badge {
+  font-size: 13px;
+}
+
+/* Media placeholder: holder swaps preview -> full; progress tracks transfer. */
+.media-holder {
+  min-width: 120px;
+}
+.media-holder img.preview {
+  filter: blur(8px);
+  transform: scale(1.02);
+  max-width: 220px;
+}
+.progress {
+  margin-top: 6px;
+  height: 6px;
+  background: var(--line);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.progress .bar {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+.progress .pct {
+  position: absolute;
+  right: 4px;
+  top: -16px;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+}
+.msg .blocked {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* Modal overlay (start chooser, passphrase prompt, busy spinner). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+  backdrop-filter: blur(2px);
+}
+.modal {
+  width: 100%;
+  max-width: 400px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.modal h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.modal p {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.modal input[type='password'],
+.modal input[type='text'] {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.modal .row {
+  display: flex;
+  gap: 8px;
+}
+.modal .row .send-btn,
+.modal .row .ghost-btn {
+  flex: 1;
+  text-align: center;
+}
+.modal .stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal .choice {
+  text-align: left;
+  padding: 12px 14px;
+}
+.modal .choice small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 2px;
+}
+.modal .err {
+  color: var(--danger);
+  font-size: 12px;
+  min-height: 14px;
+  margin-bottom: 8px;
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 4px auto 0;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Cold-start / reconnect overlay */
+.wake {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--bg);
+}
+.wake-card {
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 28px 22px;
+}
+.wake-card .spinner {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 14px;
+}
+.wake-card h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.wake-card p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.wake-card .send-btn {
+  width: 100%;
+}

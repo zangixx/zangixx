@@ -1,0 +1,42 @@
+# --- Dependencies ---
+node_modules/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Environment / secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+
+# --- TLS material for self-hosting (private keys must never be committed) ---
+certs/
+
+# --- Test / coverage ---
+coverage/
+.nyc_output/
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# --- Build output (none by default) ---
+dist/
+build/
+tmp/
+
+# ---------------------------------------------------------------------------
+# Intentionally TRACKED — do NOT add these to the ignore list:
+#   public/libs/        vendored, SRI-pinned libsodium (must ship with the app)
+#   render.yaml, fly.toml, Dockerfile, docker-compose.yml, nginx.conf
+#   bad-hashes.txt      abuse-screening list (may be empty, but committed)
+# These lines simply document intent; nothing above ignores them.
+# ---------------------------------------------------------------------------

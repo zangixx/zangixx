@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0b0d10" />
+    <meta name="referrer" content="no-referrer" />
+    <!--
+      Strict CSP: everything is same-origin. 'wasm-unsafe-eval' is required for
+      libsodium's WebAssembly to compile (it does NOT permit JS eval). No CDNs.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws: wss:; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Zangi X</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+
+    <!--
+      libsodium provides XChaCha20-Poly1305 (AEAD), Argon2id (crypto_pwhash)
+      and BLAKE2b, none of which WebCrypto exposes. It is vendored locally
+      (no CDN) and pinned with Subresource Integrity: if the served bytes ever
+      differ from this hash, the browser refuses to run it. Regenerate the hash
+      with: openssl dgst -sha384 -binary public/libs/sodium.js | openssl base64 -A
+      Source: github.com/jedisct1/libsodium.js @ 0.7.15 (dist/browsers/sodium.js)
+    -->
+    <script src="boot.js" defer></script>
+    <script
+      src="libs/sodium.js"
+      integrity="sha384-80nH8cbwibyXVHJqGj+El9K3V5iRV491XuUvgqa2Y7KhNHFh2Lr/3IMa+NHD8661"
+      crossorigin="anonymous"
+      defer
+    ></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main id="app" aria-live="polite">
+      <header class="bar">
+        <div class="brand">
+          <span class="dot" id="status-dot" title="connection"></span>
+          <strong>Zangi&nbsp;X</strong>
+          <span id="lock-badge" class="lock-badge hidden" title="Locked room (passphrase-protected)">🔒</span>
+        </div>
+        <div class="bar-actions">
+          <label class="toggle" title="Batch & pad outbound messages to blunt traffic analysis (adds latency)">
+            <input type="checkbox" id="paranoid" />
+            <span>Cover mode</span>
+          </label>
+          <button id="btn-share" class="ghost-btn" type="button">Share link</button>
+          <button id="btn-leave" class="ghost-btn danger" type="button">Burn</button>
+        </div>
+      </header>
+
+      <section id="banner" class="banner hidden" role="status"></section>
+
+      <ul id="messages" class="messages" aria-label="messages"></ul>
+
+      <div id="typing" class="typing" aria-hidden="true"></div>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <!-- Honeypot: off-screen, aria-hidden. Humans never fill these; bots do. -->
+        <div class="hp" aria-hidden="true">
+          <label>Website<input type="text" name="website" tabindex="-1" autocomplete="off" /></label>
+          <label>Email<input type="email" name="contact_email" tabindex="-1" autocomplete="off" /></label>
+        </div>
+
+        <button type="button" id="btn-attach" class="icon-btn" title="Attach image or video" aria-label="Attach">＋</button>
+        <input type="file" id="file" accept="image/*,video/*" hidden />
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Encrypted message — key stays in your URL"
+          maxlength="4000"
+          aria-label="Message"
+        ></textarea>
+        <button type="submit" id="btn-send" class="send-btn" title="Send">Send</button>
+      </form>
+    </main>
+
+    <div id="overlay" class="overlay hidden" role="dialog" aria-modal="true"></div>
+
+    <!-- Cold-start / reconnect overlay for free-tier instances that sleep when idle. -->
+    <div id="wake-up-overlay" class="wake hidden" role="status" aria-live="polite">
+      <div class="wake-card">
+        <div class="spinner"></div>
+        <h2 id="wake-title">Waking up the server…</h2>
+        <p id="wake-sub">Free-tier instances sleep when idle — this can take 30–45&nbsp;seconds.</p>
+        <button id="btn-force-wake" class="send-btn" type="button">Force wake</button>
+      </div>
+    </div>
+
+    <noscript>Zangi X needs JavaScript: all encryption runs in your browser.</noscript>
+  </body>
+</html>

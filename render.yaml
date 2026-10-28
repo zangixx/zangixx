@@ -1,0 +1,38 @@
+# Render blueprint — one free Docker web service.
+# Deploy: push to GitHub, then Render → "New +" → "Blueprint" → pick the repo.
+#
+# Notes:
+#  - Free instances SLEEP after ~15 min idle and cold-start (~30-45s) on the next
+#    request. That is fine here: Zangi X is ephemeral, so a sleep wipes all rooms
+#    by design. The in-browser wake-up overlay handles the cold-start UX.
+#  - Free tier = ephemeral disk only, no persistent volumes. This app writes
+#    nothing to disk, so that is a non-issue.
+#  - Render injects $PORT; the server already listens on it.
+services:
+  - type: web
+    name: zangi-x
+    runtime: docker            # uses the Dockerfile; no buildCommand/startCommand needed
+    plan: free
+    healthCheckPath: /health   # Render marks the instance healthy via this endpoint
+    autoDeploy: true
+    envVars:
+      - key: MEM_LIMIT_BYTES
+        value: "400000000"     # ~400 MB — MemoryManager evicts LRU rooms above 85%
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400
+      - key: WS_COMPRESS
+        value: "0"             # no permessage-deflate — saves per-connection RAM
+      - key: LOG_LEVEL
+        value: warn            # quiet logs; the logger also scrubs any PII
+      - key: ROOM_TTL_MS
+        value: "300000"        # 5 min inactivity → room self-destructs
+      - key: MAX_ROOM_MEDIA_BYTES
+        value: "52428800"      # 50 MB cached media per room
+      - key: MAX_TOTAL_MEDIA_BYTES
+        value: "209715200"     # 200 MB cached media across all rooms
+      # Render generates and injects a strong secret; use it as X-Stats-Secret.
+      - key: STATS_SECRET
+        generateValue: true
+      # Optional abuse-screening list committed to the repo (may be empty):
+      # - key: BAD_HASHES_FILE
+      #   value: /app/bad-hashes.txt

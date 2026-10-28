@@ -1,0 +1,68 @@
+services:
+  zangi:
+    build: .
+    image: zangi:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      ROOM_TTL_MS: "300000"           # 5 min inactivity → room self-destructs (even if connected)
+      ROOM_MAX_LIFETIME_MS: "0"       # optional hard cap regardless of activity (0 = off)
+      MAX_ROOM_CLIENTS: "50"
+      MEM_LIMIT_BYTES: "536870912"    # 512 MB budget — LRU MemoryManager evicts above 80%
+      MAX_ROOM_MEDIA_BYTES: "52428800"   # 50 MB cached media per room
+      MAX_TOTAL_MEDIA_BYTES: "209715200" # 200 MB cached media across all rooms
+      NODE_OPTIONS: "--max-old-space-size=400"
+      ABUSE_DROP_THRESHOLD: "3"       # bad-hash hits on one connection before it's dropped
+      # Abuse screening: hashes of known-bad ORIGINAL files, one SHA-256 hex/line.
+      # Reload at runtime without downtime: `docker compose kill -s HUP zangi`.
+      BAD_HASHES_FILE: "/run/secrets/bad-hashes.txt"
+      # Set a strong secret to enable the /stats endpoint (sent as X-Stats-Secret).
+      # STATS_SECRET: "change-me-to-a-long-random-string"
+    volumes:
+      - ./bad-hashes.txt:/run/secrets/bad-hashes.txt:ro   # create this file (can be empty)
+    expose:
+      - "8080"                     # internal only; never published to the host
+    networks: [internal]
+    # The app writes nothing to disk, so the root filesystem is read-only.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    pids_limit: 256
+    # Keep container logs tiny. For a true no-logs posture use `driver: none`
+    # (you then lose the single startup line too).
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  nginx:
+    image: nginx:1.27-alpine        # swap for a brotli-enabled image to use brotli
+    restart: unless-stopped
+    depends_on:
+      - zangi
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./public:/usr/share/nginx/html:ro
+      - ./certs:/etc/nginx/certs:ro  # provide fullchain.pem + privkey.pem (see README)
+    networks: [internal]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+networks:
+  internal:
+    driver: bridge

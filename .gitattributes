@@ -1,0 +1,14 @@
+# Normalize line endings to LF in the repo so the tree is identical on every
+# platform (Windows autocrlf included).
+* text=auto eol=lf
+
+# The vendored crypto must stay BYTE-IDENTICAL across checkouts — any CRLF
+# conversion would change its hash and break the Subresource Integrity pin.
+public/libs/sodium.js -text
+
+# Shell scripts must stay LF so the shebang works on Linux/macOS.
+*.sh text eol=lf
+
+# Binary assets: never touch.
+*.png binary
+*.ico binary
