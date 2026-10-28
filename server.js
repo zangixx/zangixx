@@ -400,6 +400,7 @@ server.on('upgrade', (req, socket, head) => {
 wss.on('connection', (ws) => {
   metrics.connectionsTotal++;
   ws.roomId = null;
+  ws.rooms = new Set();
   ws.alive = true;
   ws.abuse = 0;
   ws.rateCount = 0;
@@ -452,6 +453,14 @@ function drop(ws, _reason) {
   }
 }
 
+function getWsRoom(ws, msg) {
+  const reqRoom = msg && str(msg.room);
+  if (reqRoom && ws.rooms && ws.rooms.has(reqRoom)) {
+    return rooms.get(reqRoom);
+  }
+  return ws.roomId ? rooms.get(ws.roomId) : null;
+}
+
 // --------------------------------------------------------------------------
 // Frame handling. `ct`/`preview` are opaque base64 ciphertext; the server
 // never parses them. `id`/`seq`/`n`/`hash` are routing/abuse metadata.
@@ -463,20 +472,24 @@ function handleFrame(ws, msg) {
     case 'join':
       return onJoin(ws, msg);
     case 'leave':
-      return leaveRoom(ws);
+      return leaveRoom(ws, msg.room ? str(msg.room) : null);
     case 'ping':
       // Keep-alive: keeps the socket (and the platform instance) awake while a
       // user is present. Intentionally does NOT reset the self-destruct TTL.
       return send(ws, { t: 'pong' });
     case 'msg':
       metrics.messagesRelayed++;
-      return onRelay(ws, { t: 'msg', ct: str(msg.ct) });
+      return onRelay(ws, { t: 'msg', ct: str(msg.ct) }, false, msg);
     case 'typing':
-      return onRelay(ws, { t: 'typing' }, true);
+      return onRelay(ws, { t: 'typing' }, true, msg);
     case 'keycheck':
       // Opaque, client-to-client key-confirmation beacon. The server relays the
       // ciphertext and learns nothing (no key material ever reaches it).
-      return onRelay(ws, { t: 'keycheck', ct: str(msg.ct) }, true);
+      return onRelay(ws, { t: 'keycheck', ct: str(msg.ct) }, true, msg);
+    case 'reaction':
+      return onRelay(ws, { t: 'reaction', ct: str(msg.ct) }, false, msg);
+    case 'dm-invite':
+      return onRelay(ws, { t: 'dm-invite', ct: str(msg.ct) }, false, msg);
     case 'hash-check':
       return onHashCheck(ws, msg);
     case 'media-init':
@@ -514,26 +527,40 @@ function onHello(ws, msg) {
 function onJoin(ws, msg) {
   const roomId = str(msg.room);
   if (!roomId || roomId.length > 64) return drop(ws, 'badroom');
-  leaveRoom(ws);
+  if (!ws.rooms) ws.rooms = new Set();
+  
+  if (ws.rooms.has(roomId)) {
+    const room = rooms.get(roomId);
+    if (room) {
+      touch(room);
+      send(ws, { t: 'joined', room: roomId, peers: room.clients.size - 1, media: [...room.media.keys()] });
+    }
+    return;
+  }
+
+  if (ws.rooms.size >= 30) return send(ws, { t: 'full', error: 'max_rooms' });
   const room = getRoom(roomId);
-  if (room.clients.size >= MAX_ROOM_CLIENTS) return send(ws, { t: 'full' });
+  if (room.clients.size >= MAX_ROOM_CLIENTS) return send(ws, { t: 'full', room: roomId });
+
   ws.roomId = roomId;
+  ws.rooms.add(roomId);
   room.clients.add(ws);
   touch(room);
-  send(ws, { t: 'joined', peers: room.clients.size - 1, media: [...room.media.keys()] });
-  broadcast(room, ws, { t: 'peer-join', peers: room.clients.size });
+  send(ws, { t: 'joined', room: roomId, peers: room.clients.size - 1, media: [...room.media.keys()] });
+  broadcast(room, ws, { t: 'peer-join', room: roomId, peers: room.clients.size });
 }
 
-function onRelay(ws, frame, noTouch) {
-  const room = rooms.get(ws.roomId);
+function onRelay(ws, frame, noTouch, msg) {
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   if (!noTouch) touch(room);
+  frame.room = room.id;
   broadcast(room, ws, frame);
   applyBackpressure(ws, room);
 }
 
 function onHashCheck(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   const hash = str(msg.hash).toLowerCase();
@@ -544,13 +571,13 @@ function onHashCheck(ws, msg) {
     metrics.hashBlocks++;
     room.blocked.add(id);
     ws.abuse++;
-    send(ws, { t: 'media-blocked', id });
+    send(ws, { t: 'media-blocked', id, room: room.id });
     if (ws.abuse >= ABUSE_DROP_THRESHOLD) drop(ws, 'abuse');
   }
 }
 
 function onMediaInit(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   const n = Number(msg.n);
@@ -562,11 +589,11 @@ function onMediaInit(ws, msg) {
   });
   metrics.mediaObjects++;
   touch(room);
-  broadcast(room, ws, { t: 'media-init', id, n, ct: str(msg.ct), preview: str(msg.preview) });
+  broadcast(room, ws, { t: 'media-init', room: room.id, id, n, ct: str(msg.ct), preview: str(msg.preview) });
 }
 
 function onMediaChunk(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   if (room.blocked.has(id)) return;
@@ -593,7 +620,7 @@ function onMediaChunk(ws, msg) {
   room.bytes += buf.length;
   metrics.mediaBytesProcessed += buf.length;
   touch(room); // also updates this room's cached size in the LRU
-  broadcast(room, ws, { t: 'media-chunk', id, seq, ct: str(msg.ct) });
+  broadcast(room, ws, { t: 'media-chunk', room: room.id, id, seq, ct: str(msg.ct) });
   applyBackpressure(ws, room); // throttle this uploader if peers are backing up
 }
 
@@ -606,12 +633,12 @@ function evictRoomMedia(room, need, keepId) {
     m.meta = null;
     m.preview = null;
     room.media.delete(mid);
-    broadcast(room, null, { t: 'media-expired', id: mid });
+    broadcast(room, null, { t: 'media-expired', room: room.id, id: mid });
   }
 }
 
 function onMediaDone(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   if (room.blocked.has(id)) return;
@@ -619,35 +646,35 @@ function onMediaDone(ws, msg) {
   if (!media) return;
   media.done = true;
   touch(room);
-  broadcast(room, ws, { t: 'media-done', id });
+  broadcast(room, ws, { t: 'media-done', room: room.id, id });
 }
 
 function onMediaGet(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   const media = room.media.get(id);
-  if (!media) return send(ws, { t: 'media-missing', id });
+  if (!media) return send(ws, { t: 'media-missing', room: room.id, id });
   touch(room);
   send(ws, {
-    t: 'media-init', id, n: media.n,
+    t: 'media-init', room: room.id, id, n: media.n,
     ct: media.meta ? media.meta.toString('base64') : '',
     preview: media.preview ? media.preview.toString('base64') : '',
   });
   for (let seq = 0; seq < media.n; seq++) {
-    if (media.chunks[seq]) send(ws, { t: 'media-chunk', id, seq, ct: media.chunks[seq].toString('base64') });
+    if (media.chunks[seq]) send(ws, { t: 'media-chunk', room: room.id, id, seq, ct: media.chunks[seq].toString('base64') });
   }
-  if (media.done) send(ws, { t: 'media-done', id });
+  if (media.done) send(ws, { t: 'media-done', room: room.id, id });
 }
 
 function onMediaHave(ws, msg) {
-  const room = rooms.get(ws.roomId);
+  const room = getWsRoom(ws, msg);
   if (!room) return;
   const id = str(msg.id);
   const media = room.media.get(id);
   const have = [];
   if (media) for (let i = 0; i < media.n; i++) if (media.chunks[i] !== undefined) have.push(i);
-  send(ws, { t: 'media-have', id, exists: !!media, n: media ? media.n : 0, have });
+  send(ws, { t: 'media-have', room: room.id, id, exists: !!media, n: media ? media.n : 0, have });
 }
 
 function failMedia(ws, room, id, reason) {
@@ -656,22 +683,33 @@ function failMedia(ws, room, id, reason) {
     room.bytes -= media.bytes;
     room.media.delete(id);
   }
-  send(ws, { t: 'media-fail', id, reason });
+  send(ws, { t: 'media-fail', room: room.id, id, reason });
 }
 
-function leaveRoom(ws) {
+function leaveRoom(ws, specificRoomId) {
   if (ws._bpTimer) {
     clearInterval(ws._bpTimer);
     ws._bpTimer = null;
     ws.bpPaused = false;
   }
-  const room = ws.roomId && rooms.peek(ws.roomId);
-  ws.roomId = null;
-  if (!room) return;
-  room.clients.delete(ws);
-  if (room.clients.size > 0) broadcast(room, null, { t: 'peer-leave', peers: room.clients.size });
-  // Empty rooms are kept until the inactivity TTL so a reconnecting peer can
-  // still pull cached media; the LRU handles their eventual removal.
+  if (!ws.rooms) ws.rooms = new Set();
+  const toLeave = specificRoomId
+    ? [specificRoomId]
+    : (ws.rooms.size > 0 ? [...ws.rooms] : (ws.roomId ? [ws.roomId] : []));
+
+  for (const rId of toLeave) {
+    ws.rooms.delete(rId);
+    if (ws.roomId === rId) {
+      ws.roomId = ws.rooms.size > 0 ? [...ws.rooms][0] : null;
+    }
+    const room = rooms.peek(rId);
+    if (room) {
+      room.clients.delete(ws);
+      if (room.clients.size > 0) {
+        broadcast(room, null, { t: 'peer-leave', room: rId, peers: room.clients.size });
+      }
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
